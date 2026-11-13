@@ -1,0 +1,15 @@
+[Unit]
+Description=GSI-ALERTA - aviso de notas del 2o ejercicio GSI (INAP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sergio
+WorkingDirectory=/home/sergio/gsi-alerta/server
+ExecStart=/home/sergio/gsi-alerta/server/venv/bin/python /home/sergio/gsi-alerta/server/gsialerta.py
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Datos del servidor
+server/config.json
+server/estado.json
+server/*.tmp
+server/venv/
+__pycache__/
+*.pyc
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+.idea/
+
+# Listados reales del INAP (llevan datos de otras personas): solo en local
+server/tests/fixtures/reales/

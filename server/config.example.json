@@ -1,0 +1,12 @@
+{
+  "nombre": "APELLIDOS, NOMBRE",
+  "url": "https://sede.inap.gob.es/es/procedimientos-y-servicios/seleccion/procesos-selectivos-de-cuerpos-y-escalas-generales/cuerpo-de-gestion-de-sistemas-e-informatica-de-la-administracion-del-estado-ingreso-libre-convocatoria-2025",
+  "puerto": 8806,
+  "api_key": "",
+  "intervalo_segundos": 60,
+  "aviso_caida_minutos": 20,
+  "plazas_general": 634,
+  "plazas_cupo": 46,
+  "pi_agent": "http://127.0.0.1:8790",
+  "pi_agent_bot": "gsialerta.service"
+}
