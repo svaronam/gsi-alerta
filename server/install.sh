@@ -26,7 +26,8 @@ venv/bin/python gsialerta.py --probar
 echo "== Servicio systemd"
 sudo cp gsialerta.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now gsialerta
+sudo systemctl enable gsialerta
+sudo systemctl restart gsialerta   # restart: si ya estaba en marcha, coge el código nuevo
 sleep 2
 systemctl --no-pager --lines=5 status gsialerta || true
 
