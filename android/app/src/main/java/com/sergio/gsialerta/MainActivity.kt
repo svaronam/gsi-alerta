@@ -190,6 +190,14 @@ class MainActivity : Activity() {
             try {
                 val r = trabajo()
                 runOnUiThread { alTerminar(r) }
+            } catch (e: RespuestaPi) {
+                runOnUiThread {
+                    tvInfo.text = when (e.codigo) {
+                        401 -> "La Pi responde, pero la clave no es correcta. Revísala en Ajustes."
+                        404 -> "La Pi responde, pero no conoce esa función: actualiza gsialerta.py en la Pi."
+                        else -> "La Pi responde con error ${e.codigo}: ${e.message}"
+                    }
+                }
             } catch (e: Exception) {
                 runOnUiThread {
                     tvInfo.text = "Sin conexión con la Pi: ${e.message}\n¿Tailscale activo en el móvil?"

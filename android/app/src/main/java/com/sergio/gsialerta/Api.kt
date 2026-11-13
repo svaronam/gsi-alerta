@@ -27,6 +27,9 @@ object Prefs {
     fun setUltimoId(ctx: Context, id: Int) = p(ctx).edit().putInt("ultimo_id", id).apply()
 }
 
+/** La Pi ha respondido, pero con un error (clave mala, ruta que no conoce...). */
+class RespuestaPi(val codigo: Int, mensaje: String) : IOException(mensaje)
+
 /** Llamadas HTTP a la Pi (bloqueantes: nunca desde el hilo principal). */
 object Api {
     fun get(ctx: Context, ruta: String, timeoutMs: Int = 15000): JSONObject =
@@ -53,7 +56,7 @@ object Api {
             val cuerpo = flujo?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
             val json = try { JSONObject(cuerpo) } catch (e: Exception) { JSONObject() }
             if (codigo >= 400) {
-                throw IOException(json.optString("error", "HTTP $codigo"))
+                throw RespuestaPi(codigo, json.optString("error", "HTTP $codigo"))
             }
             return json
         } finally {
