@@ -41,7 +41,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 
-VERSION = "1.0"
+VERSION = "1.1"
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
 ESTADO = BASE / "estado.json"
