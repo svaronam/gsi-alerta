@@ -64,7 +64,7 @@ object Notificador {
     fun aviso(ctx: Context, e: JSONObject) {
         crearCanales(ctx)
         val tipo = e.optString("tipo")
-        val importante = tipo == "resultado" || tipo == "publicado"
+        val importante = tipo == "resultado" || tipo == "publicado" || tipo == "prueba_resultado"
         val id = 1000 + e.optInt("id")
         val texto = e.optString("texto")
         val n = Notification.Builder(ctx, if (importante) CANAL_RESULTADO else CANAL_NOVEDADES)

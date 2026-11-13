@@ -67,6 +67,16 @@ sudo systemctl disable --now gsialerta               # cuando ya no haga falta
 
 El resultado llega por un canal con sonido de alarma. Al tocarlo se abre el PDF.
 
+## Simulacros
+
+Los botones **🧪 Simular aprobado** y **🧪 Simular suspenso** de la app prueban la cadena entera sin esperar al INAP:
+
+1. La Pi genera un PDF del 2.º ejercicio con el formato del INAP. Toma como base los aprobados reales del 1.er ejercicio, con notas inventadas, y te incluye o no según el botón. El PDF se genera sin dependencias.
+2. Lo lee con el mismo `pdftotext`, lo cruza con las notas del 1.º y calcula el puesto, igual que con el listado real.
+3. Manda el aviso por el canal importante, marcado como 🧪 PRUEBA, a la app y a Pi Monitor. Al tocarlo, se descarga el PDF del simulacro.
+
+El resultado real no se toca.
+
 ## API
 
 Todas las llamadas llevan la cabecera `X-API-Key`.
@@ -78,6 +88,8 @@ Todas las llamadas llevan la cabecera `X-API-Key`.
 | `GET /api/eventos?desde=N&espera=S` | avisos con id > N; espera hasta S segundos (máx. 60) a que llegue alguno |
 | `POST /api/check` | barrida inmediata |
 | `POST /api/prueba` | aviso de prueba |
+| `POST /api/simular?caso=aprobado\|suspenso` | simulacro completo (ver abajo) |
+| `GET /prueba/<clave>/….pdf` | PDF del simulacro; sin clave, la ruta es aleatoria y solo vive en memoria |
 
 ## Tests
 

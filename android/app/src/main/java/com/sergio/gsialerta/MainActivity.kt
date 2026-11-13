@@ -111,6 +111,17 @@ class MainActivity : Activity() {
         fila.addView(boton("Probar aviso") { prueba() },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         col.addView(fila)
+
+        col.addView(texto(13f, color = Color.LTGRAY).apply {
+            text = "Simulacros: la Pi crea un PDF del 2.º ejercicio inventado, lo lee y te manda el aviso real (tócalo para descargar el PDF)"
+            setPadding(0, dp(10), 0, 0)
+        })
+        val simulacros = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        simulacros.addView(boton("🧪 Simular aprobado") { simular("aprobado") },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        simulacros.addView(boton("🧪 Simular suspenso") { simular("suspenso") },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        col.addView(simulacros)
         col.addView(boton("Abrir la web del INAP") { abrirUrl(urlWeb) })
 
         col.addView(texto(18f, true).apply { text = "Avisos"; setPadding(0, dp(18), 0, dp(4)) })
@@ -196,6 +207,14 @@ class MainActivity : Activity() {
     private fun barrer() {
         tvInfo.text = "Barriendo la web del INAP…"
         enSegundoPlano({ Api.post(this, "/api/check") }) { cargar() }
+    }
+
+    private fun simular(caso: String) {
+        tvInfo.text = "Simulacro «$caso»: la Pi está generando y leyendo el PDF…"
+        enSegundoPlano({ Api.post(this, "/api/simular?caso=$caso") }) {
+            toast("Simulacro enviado; el aviso te llega en unos segundos")
+            cargar()
+        }
     }
 
     private fun prueba() = enSegundoPlano({ Api.post(this, "/api/prueba") }) {

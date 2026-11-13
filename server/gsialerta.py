@@ -14,6 +14,8 @@ estás o no en el listado de aprobados y con qué nota.
     GET  /api/eventos?desde=N&espera=S  -> avisos con id > N (long-poll hasta S s)
     POST /api/check                     -> barrida inmediata
     POST /api/prueba                    -> genera un aviso de prueba
+    POST /api/simular?caso=aprobado|suspenso -> simulacro completo con PDF inventado
+  GET /prueba/<clave>/<fichero>.pdf (sin clave, ruta aleatoria) -> PDF del simulacro
   GET /api/ping no necesita clave.
 
 Uso:
@@ -62,7 +64,7 @@ CONFIG_DEFECTO = {
     "pi_agent": "http://127.0.0.1:8790",
     "pi_agent_bot": "gsialerta.service",
 }
-PRIO_PIMONITOR = {"resultado": 5, "publicado": 5, "error": 4, "novedad": 3,
+PRIO_PIMONITOR = {"resultado": 5, "publicado": 5, "prueba_resultado": 5, "error": 4, "novedad": 3,
                   "prueba": 3, "info": 2}
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -75,6 +77,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("gsialerta")
 
 LOCK = threading.RLock()
+PDFS_PRUEBA = {}   # clave aleatoria -> PDF de simulacro (solo en memoria)
 NUEVO_EVENTO = threading.Condition(LOCK)
 DESPERTAR = threading.Event()
 
@@ -346,6 +349,104 @@ def texto_puesto(p: dict) -> str:
     return s
 
 
+# ------------------------------------------------------- simulacros (pruebas)
+def _pdf_texto(s: str) -> bytes:
+    s = s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return s.encode("cp1252", "replace")
+
+
+def pdf_listado(titulo: str, filas: list, por_pagina: int = 100) -> bytes:
+    """PDF de listado con el formato del INAP (dos columnas), sin dependencias.
+
+    filas: dicts con nif, nombre, nota. Se ordenan alfabéticamente como el real.
+    """
+    filas = sorted(filas, key=lambda f: f["nombre"])
+    paginas = []
+    for p in range(0, max(len(filas), 1), por_pagina):
+        trozo = filas[p:p + por_pagina]
+        mitad = (len(trozo) + 1) // 2
+        ops = ["BT", "/F1 8 Tf"]
+
+        def txt(x, y, s):
+            ops.append((f"1 0 0 1 {x} {y} Tm (", s, ") Tj"))
+
+        y = 560
+        txt(40, y, "MINISTERIO PARA LA TRANSFORMACIÓN DIGITAL Y DE LA FUNCIÓN PÚBLICA")
+        txt(560, y, "COMISIÓN PERMANENTE DE SELECCIÓN")
+        txt(40, y - 22, "PRUEBAS SELECTIVAS PARA INGRESO LIBRE EN EL CUERPO DE GESTIÓN DE SISTEMAS E "
+                        "INFORMÁTICA DE LA ADMINISTRACIÓN DEL ESTADO  ·  DOCUMENTO DE PRUEBA DE GSI-ALERTA")
+        txt(40, y - 34, titulo)
+        txt(40, y - 46, "SISTEMA DE ACCESO: GENERAL")
+        y -= 66
+        for x in (40, 420):
+            txt(x, y, "D.N.I.")
+            txt(x + 70, y, "APELLIDOS Y NOMBRE")
+            txt(x + 300, y, "PUNTUACIÓN")
+        y -= 12
+        for i in range(mitad):
+            for col, j in enumerate((i, i + mitad)):
+                if j >= len(trozo):
+                    continue
+                f, x = trozo[j], 40 + col * 380
+                txt(x, y, f["nif"])
+                txt(x + 70, y, f["nombre"])
+                txt(x + 300, y, fmt_nota(f["nota"]))
+            y -= 9
+        ops.append("ET")
+        cuerpo = b""
+        for o in ops:
+            if isinstance(o, tuple):
+                antes, texto, despues = o
+                cuerpo += antes.encode() + _pdf_texto(texto) + despues.encode() + b"\n"
+            else:
+                cuerpo += o.encode() + b"\n"
+        paginas.append(cuerpo)
+
+    objs = []  # (num, bytes)
+    n_font = 3
+    kids = []
+    for k, cuerpo in enumerate(paginas):
+        n_page, n_cont = 4 + 2 * k, 5 + 2 * k
+        kids.append(f"{n_page} 0 R")
+        objs.append((n_page, f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] "
+                             f"/Resources << /Font << /F1 {n_font} 0 R >> >> /Contents {n_cont} 0 R >>".encode()))
+        objs.append((n_cont, b"<< /Length %d >>\nstream\n" % len(cuerpo) + cuerpo + b"endstream"))
+    objs += [(1, b"<< /Type /Catalog /Pages 2 0 R >>"),
+             (2, f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>".encode()),
+             (3, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")]
+    objs.sort()
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = {}
+    for num, data in objs:
+        offsets[num] = len(out)
+        out += f"{num} 0 obj\n".encode() + data + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for num in range(1, len(objs) + 1):
+        out += f"{offsets[num]:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(out)
+
+
+def simular_listado2(l1: list, nombre: str, apruebas: bool, semilla=None) -> list:
+    """Listado ficticio del 2.º ejercicio a partir de los aprobados reales del 1.º."""
+    import random
+    rnd = random.Random(semilla)
+    yo = norm(nombre)
+    otros = [f for f in l1 if f["nombre"] != yo]
+    if not otros:  # sin listado del 1.º leído: nombres inventados
+        otros = [{"nif": f"***{rnd.randint(0, 9999):04d}**",
+                  "nombre": f"PERSONA {i:03d}, PRUEBA", "nota": round(rnd.uniform(25, 41), 2)}
+                 for i in range(500)]
+    aprobados = rnd.sample(otros, k=int(len(otros) * 0.62))
+    filas = [{**f, "nota": round(rnd.uniform(25, 45), 2)} for f in aprobados]
+    if apruebas:
+        mio = next((f for f in l1 if f["nombre"] == yo),
+                   {"nif": "***0000**", "nombre": yo, "nota": 28.45})
+        filas.append({**mio, "nota": round(rnd.uniform(30, 38), 2)})
+    return filas
+
+
 # ---------------------------------------------------------------- el bot
 class Bot:
     def __init__(self, cfg: dict):
@@ -565,6 +666,42 @@ class Bot:
                         "Aún no he podido leer el PDF; lo reintento cada minuto. "
                         "Toca para abrirlo.", url_general)
 
+    # -- simulacros: misma cadena que el aviso real, con un PDF inventado
+    def simular(self, caso: str, base_url: str) -> dict:
+        """caso = 'aprobado' | 'suspenso'. No toca el resultado real."""
+        apruebas = caso == "aprobado"
+        with LOCK:
+            l1 = list(self.estado.get("l1") or [])
+        filas = simular_listado2(l1, self.cfg["nombre"], apruebas)
+        pdf = pdf_listado("RELACIÓN NOMINATIVA DE ASPIRANTES QUE SUPERAN EL SEGUNDO EJERCICIO "
+                          "(SIMULACRO)", filas)
+        clave = secrets.token_urlsafe(12)
+        with LOCK:
+            PDFS_PRUEBA[clave] = pdf
+            while len(PDFS_PRUEBA) > 10:
+                PDFS_PRUEBA.pop(next(iter(PDFS_PRUEBA)))
+        url = f"{base_url}/prueba/{clave}/2-GSI-L-SUP_GEN_SIMULACRO.pdf"
+
+        # lo mismo que con el PDF real: texto -> veredicto -> filas -> puesto
+        texto = texto_pdf(pdf)
+        r = buscar_en_listado(texto, self.cfg["nombre"])
+        listado = parsear_listado(texto)
+        if r["legible"] and r["encontrado"]:
+            puesto = (calcular_puesto(self.cfg["nombre"], l1, listado["filas"], [],
+                                      int(self.cfg.get("plazas_general", 634)),
+                                      int(self.cfg.get("plazas_cupo", 46)))
+                      if l1 else {"calculado": False})
+            detalle = texto_puesto(puesto) or f"Aprueban {r['personas']} personas."
+            if not l1:
+                detalle += " (Sin listado del 1.º leído: el puesto no se puede calcular.)"
+            self.evento("prueba_resultado", "🧪 PRUEBA · ✅ ¡APRUEBAS EL 2.º EJERCICIO!",
+                        f"2.º ejercicio: {r['nota'] or '?'}. {detalle}", url)
+            return {"caso": caso, "nota": r["nota"], "puesto": puesto, "url": url}
+        self.evento("prueba_resultado", "🧪 PRUEBA · ❌ No apareces en el listado del 2.º ejercicio",
+                    f"Han publicado los aprobados del 2.º ejercicio ({r['personas']} personas) "
+                    "y no figuras. Abre el PDF para comprobarlo.", url)
+        return {"caso": caso, "personas": r["personas"], "url": url}
+
     # -- vista para la APK
     def vista(self) -> dict:
         with LOCK:
@@ -643,6 +780,20 @@ def crear_handler(bot: Bot, api_key: str):
             q = parse_qs(url.query)
             if url.path == "/api/ping":
                 return self._json(200, {"ok": True, "app": "gsi-alerta"})
+            m = re.fullmatch(r"/prueba/([\w-]+)/[\w.-]+\.pdf", url.path)
+            if m:  # sin clave: lo abre el navegador del móvil; la ruta es aleatoria
+                with LOCK:
+                    pdf = PDFS_PRUEBA.get(m.group(1))
+                if pdf is None:
+                    return self._json(404, {"error": "esa prueba ya no existe; lanza otra"})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition",
+                                 'attachment; filename="2-GSI-L-SUP_GEN_SIMULACRO.pdf"')
+                self.send_header("Content-Length", str(len(pdf)))
+                self.end_headers()
+                self.wfile.write(pdf)
+                return
             if not self._autorizado():
                 return
             if url.path == "/api/estado":
@@ -671,6 +822,16 @@ def crear_handler(bot: Bot, api_key: str):
                 except Exception as ex:
                     return self._json(502, {"error": f"No pude leer la web: {ex}"})
                 return self._json(200, bot.vista())
+            if url.path == "/api/simular":
+                caso = parse_qs(url.query).get("caso", [""])[0]
+                if caso not in ("aprobado", "suspenso"):
+                    return self._json(400, {"error": "caso = aprobado | suspenso"})
+                host = self.headers.get("Host") or f"127.0.0.1:{self.server.server_address[1]}"
+                try:
+                    return self._json(200, bot.simular(caso, f"http://{host}"))
+                except Exception as ex:
+                    log.exception("Simulacro fallido")
+                    return self._json(500, {"error": f"El simulacro ha fallado: {ex}"})
             if url.path == "/api/prueba":
                 bot.evento("prueba", "🔔 Prueba de GSI-ALERTA",
                            "Si ves esto, las notificaciones funcionan.", bot.cfg["url"])

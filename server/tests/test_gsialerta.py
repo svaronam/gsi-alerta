@@ -255,6 +255,33 @@ def test_pi_monitor_caido_no_rompe_nada():
     bot.evento("info", "x", "y")
 
 
+
+def test_pdf_propio_se_lee_igual_que_el_del_inap():
+    filas = g.simular_listado2(L1["filas"], "OPOSITORA PRUEBA, ANA", True, semilla=3)
+    pdf = g.pdf_listado("RELACIÓN NOMINATIVA … SEGUNDO EJERCICIO", filas)
+    assert pdf.startswith(b"%PDF")
+    t = g.texto_pdf(pdf)
+    p = g.parsear_listado(t)
+    assert p["completo"] and len(p["filas"]) == len(filas)
+    assert g.buscar_en_listado(t, "OPOSITORA PRUEBA, ANA")["encontrado"]
+
+
+def test_simulacros():
+    bot = bot_falso([ANTES], {"1-GSI-L-DM-SUP_GEN": PDF_1_LIBRE})
+    bot.barrer()                                    # carga el 1.er ejercicio
+    a = bot.simular("aprobado", "http://homelab2:8806")
+    assert a["nota"] and a["puesto"]["calculado"] and a["puesto"]["nota1"] == 28.45
+    assert a["url"].startswith("http://homelab2:8806/prueba/") and a["url"].endswith(".pdf")
+    s = bot.simular("suspenso", "http://homelab2:8806")
+    assert s["personas"] > 100
+    ev = [e for e in bot.estado["eventos"] if e["tipo"] == "prueba_resultado"]
+    assert "APRUEBAS" in ev[0]["titulo"] and "puesto" in ev[0]["texto"]
+    assert "No apareces" in ev[1]["titulo"] and ev[1]["titulo"].startswith("🧪")
+    assert bot.estado["resultado"] is None          # el resultado real no se toca
+    clave = a["url"].split("/prueba/")[1].split("/")[0]
+    assert g.PDFS_PRUEBA[clave].startswith(b"%PDF")
+
+
 if __name__ == "__main__":
     for nombre, f in list(globals().items()):
         if nombre.startswith("test_"):
